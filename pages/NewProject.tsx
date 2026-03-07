@@ -13,7 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import WorkflowProgress from "@/components/WorkflowProgress";
 
 const workflowSteps = [
   { label: "Define", status: "active" as const },
@@ -32,20 +31,47 @@ const mockRefinedQuestions = [
   "What role does end-user preference play in procurement decisions for collaboration tools?",
 ];
 
-const NewProject = () => {
+export default function NewProject() {
   const router = useRouter();
-  const [problem, setProblem] = useState("");
+  const [problemTitle, setProblemTitle] = useState("");
+  const [problemStatement, setProblemStatement] = useState("");
   const [target, setTarget] = useState("");
   const [industry, setIndustry] = useState("");
   const [showResults, setShowResults] = useState(false);
   const [questions, setQuestions] = useState<string[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [newQuestion, setNewQuestion] = useState("");
+  const [projectId, setProjectId] = useState("");
 
-  const handleRefine = () => {
-    setQuestions([...mockRefinedQuestions]);
-    setShowResults(true);
-  };
+  async function handleRefine() {
+    const payload = {
+      problemTitle,
+      problemStatement,
+      target,
+      industry,
+    };
+    const data = await fetch(
+      `${process.env.NEXT_PUBLIC_BACKEND_AWS_URL}/refine-questions`,
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+    const result = await data.json();
+    console.log("Received:", result);
+    if (result.questions) {
+      setProjectId(result.projectId);
+      setQuestions(result.questions);
+      setShowResults(true);
+    } else {
+      setQuestions(mockRefinedQuestions);
+      setShowResults(true);
+    }
+  }
 
   const handleAddQuestion = () => {
     if (newQuestion.trim()) {
@@ -59,23 +85,42 @@ const NewProject = () => {
     setQuestions((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = () => {
-    const data = {
-      problemStatement: problem,
-      targetConsumer: target,
-      industry,
-      questions,
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "refined-questions.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  async function handleSaveQuestions() {
+    try {
+      const payload = {
+        projectId,
+        questions,
+      };
+      console.log("Saving questions:", payload);
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_AWS_URL}/save-questions`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify(payload),
+        },
+      );
+
+      const result = await response.json();
+
+      console.log("Save result:", result);
+
+      if (response.ok) {
+        alert("Questions saved successfully");
+      } else {
+        alert("Failed to save questions");
+      }
+    } catch (error) {
+      console.error("Save error:", error);
+
+      alert("Error saving questions");
+    }
+  }
 
   return (
     <div className="p-6 lg:p-8 max-w-5xl mx-auto w-full">
@@ -100,7 +145,6 @@ const NewProject = () => {
               approach
             </p>
           </div>
-          <WorkflowProgress steps={workflowSteps} />
         </div>
       </motion.div>
 
@@ -115,12 +159,23 @@ const NewProject = () => {
           <div className="bg-card rounded-lg border p-5 space-y-4">
             <div>
               <label className="text-xs font-medium text-foreground mb-1.5 block">
+                Problem Title
+              </label>
+              <Textarea
+                placeholder="e.g., We're seeing high churn in our mid-market segment but don't understand the root causes..."
+                value={problemTitle}
+                onChange={(e) => setProblemTitle(e.target.value)}
+                className="min-h-25 text-sm resize-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-foreground mb-1.5 block">
                 Problem Statement
               </label>
               <Textarea
                 placeholder="e.g., We're seeing high churn in our mid-market segment but don't understand the root causes..."
-                value={problem}
-                onChange={(e) => setProblem(e.target.value)}
+                value={problemStatement}
+                onChange={(e) => setProblemStatement(e.target.value)}
                 className="min-h-25 text-sm resize-none"
               />
             </div>
@@ -162,7 +217,7 @@ const NewProject = () => {
             <Button
               className="w-full bg-gradient-warm text-accent-foreground hover:opacity-90 transition-opacity"
               onClick={handleRefine}
-              disabled={!problem.trim()}
+              disabled={!problemStatement.trim()}
             >
               <Sparkles className="h-4 w-4 mr-2" />
               Refine with AI
@@ -278,7 +333,7 @@ const NewProject = () => {
 
                 <Button
                   className="w-full bg-gradient-warm text-accent-foreground hover:opacity-90 transition-opacity"
-                  onClick={handleSubmit}
+                  onClick={handleSaveQuestions}
                   disabled={questions.length === 0}
                 >
                   <Download className="h-4 w-4 mr-2" />
@@ -291,6 +346,4 @@ const NewProject = () => {
       </div>
     </div>
   );
-};
-
-export default NewProject;
+}

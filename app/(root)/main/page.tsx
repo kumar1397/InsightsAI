@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useState } from "react";
 import { Plus, Search, Filter } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -6,50 +7,39 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import AppLayout from "@/components/AppLayout";
 import ProjectCard from "@/components/ProjectCard";
-
-const mockProjects = [
-  {
-    name: "Gen Z Spending Habits",
-    status: "Analyzing" as const,
-    lastUpdated: "2 hours ago",
-    description:
-      "Understanding how Gen Z consumers allocate disposable income across digital vs. physical experiences.",
-  },
-  {
-    name: "Enterprise SaaS Churn Drivers",
-    status: "Validating" as const,
-    lastUpdated: "1 day ago",
-    description:
-      "Identifying the top 5 factors contributing to mid-market SaaS churn in the first 90 days.",
-  },
-  {
-    name: "Sustainable Packaging Perception",
-    status: "Ready" as const,
-    lastUpdated: "3 days ago",
-    description:
-      "Consumer perception of sustainable packaging in FMCG and willingness-to-pay premium analysis.",
-  },
-  {
-    name: "Remote Work Tool Fatigue",
-    status: "Exploring" as const,
-    lastUpdated: "5 days ago",
-    description:
-      "Exploring pain points around tool overload for hybrid teams and consolidation opportunities.",
-  },
-  {
-    name: "Health App Engagement",
-    status: "Exploring" as const,
-    lastUpdated: "1 week ago",
-    description:
-      "Why do users drop off health tracking apps within the first 30 days?",
-  },
-];
+import {api} from "@/lib/api";
+interface Project {
+  projectId: string;
+  projectName?: string;
+  industry?: string;
+  targetConsumer?: string;
+  refinedProblemStatement?: string;
+  questions?: string[];
+  createdAt?: string;
+}
 
 export default function Dashboard() {
   const router = useRouter();
 
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  async function fetchProjects() {
+    try {
+      const data = await api.getProjects();
+      setProjects(data.projects || []);
+    } catch (error) {
+      console.error("Fetch error:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
   return (
     <AppLayout>
+      {loading && <p>Loading...</p>}
       <div className="p-6 lg:p-8 max-w-6xl mx-auto w-full">
         {/* Header */}
         <motion.div
@@ -123,17 +113,11 @@ export default function Dashboard() {
           transition={{ duration: 0.3, delay: 0.2 }}
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
         >
-          {mockProjects.map((project) => (
-            <ProjectCard
-              key={project.name}
-              {...project}
-              onClick={() => router.push("/new-project")}
-            />
+          {projects.map((project) => (
+            <ProjectCard key={project.projectId} {...project} />
           ))}
         </motion.div>
       </div>
     </AppLayout>
   );
-};
-
-
+}

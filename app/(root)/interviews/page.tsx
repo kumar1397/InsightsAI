@@ -11,11 +11,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import AppLayout from "@/components/AppLayout";
-import { projects, questions as allQuestions } from "@/data/mockPersonData";
-import voiceAgentAvatar from "@/assets/voice-agent-avatar.png";
+import voiceAgentAvatar from "@/public/voice-agent-avatar.png";
 import Image from "next/image";
-type Step = "agent" | "details" | "problem" | "interview";
+import { api } from "@/lib/api";
+
+type Step = "details" | "problem" | "interview";
+
+interface Project {
+  projectId: string;
+  projectName?: string;
+  industry?: string;
+  targetConsumer?: string;
+  refinedProblemStatement?: string;
+  questions?: string[];
+  createdAt?: string;
+}
 
 interface Message {
   role: "ai" | "user";
@@ -26,38 +36,54 @@ interface UserDetails {
   name: string;
   age: string;
   location: string;
+  gender: string;
+  income: number;
+  education: string;
 }
 
-// Simulated user answers for demo
-const mockUserAnswers = [
-  "I think it means being in control of where my money goes every month.",
-  "I mostly use a spreadsheet, but I forget to update it after a week.",
-  "The most frustrating part is when small purchases add up and I don't realize until the end of the month.",
-  "Maybe twice a week, usually when I'm anxious about a big expense.",
-  "Honestly, transparency about how my data is used and simple UI would make me trust it.",
-];
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://3.109.182.79:8080";
 
 const InterviewsPage = () => {
-  const [step, setStep] = useState<Step>("agent");
+  const [step, setStep] = useState<Step>("details");
+  const [projects, setProjects] = useState<Project[]>([]);
   const [userDetails, setUserDetails] = useState<UserDetails>({
     name: "",
     age: "",
     location: "",
+    gender: "",
+    income: 0,
+    education: "",
   });
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [interviewComplete, setInterviewComplete] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [statusText, setStatusText] = useState("Connecting...");
+
+  // Refs
   const scrollRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
-  const projectQuestions = allQuestions.filter(
-    (q) => q.projectId === selectedProjectId,
-  );
-  const selectedProject = projects.find((p) => p.id === selectedProjectId);
+  // ─── Fetch Projects ───────────────────────────────────────────────
+  useEffect(() => {
+    async function fetchProjects() {
+      try {
+        const data = await api.getProjects();
+        setProjects(data.projects || []);
+      } catch (error) {
+        console.error("Fetch error:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchProjects();
+  }, []);
 
-  // Auto-scroll chat
+  // ─── Auto Scroll ──────────────────────────────────────────────────
   useEffect(() => {
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight,
@@ -65,117 +91,208 @@ const InterviewsPage = () => {
     });
   }, [messages]);
 
-  // Start interview — ask first question
-  const startInterview = useCallback(() => {
-    if (projectQuestions.length > 0) {
-      setIsSpeaking(true);
-      setTimeout(() => {
-        setMessages([{ role: "ai", text: projectQuestions[0].title }]);
-        setIsSpeaking(false);
-        setCurrentQuestionIndex(0);
-      }, 1200);
-    }
-  }, [projectQuestions]);
+  const selectedProject = projects.find(
+    (p) => p.projectId === selectedProjectId,
+  );
 
-  useEffect(() => {
-    if (step === "interview" && messages.length === 0) {
-      const timer = setTimeout(() => {
-        startInterview();
-      }, 0);
-      return () => clearTimeout(timer);
-    }
-  }, [step, messages.length, startInterview]);
-
-  // Simulate user responding via mic
-  const handleMicClick = () => {
-    if (isListening || interviewComplete) return;
-    setIsListening(true);
-
-    // Simulate STT delay
-    setTimeout(() => {
-      const answer =
-        mockUserAnswers[currentQuestionIndex] ||
-        "That's a great question, let me think...";
-      setMessages((prev) => [...prev, { role: "user", text: answer }]);
-      setIsListening(false);
-
-      // Ask next question or end
-      const nextIndex = currentQuestionIndex + 1;
-      if (nextIndex < projectQuestions.length) {
-        setIsSpeaking(true);
-        setTimeout(() => {
-          setMessages((prev) => [
-            ...prev,
-            { role: "ai", text: projectQuestions[nextIndex].title },
-          ]);
-          setCurrentQuestionIndex(nextIndex);
-          setIsSpeaking(false);
-        }, 1500);
-      } else {
-        setIsSpeaking(true);
-        setTimeout(() => {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "ai",
-              text: "Thank you so much for your time and honest feedback! This has been incredibly valuable. The interview is now complete.",
-            },
-          ]);
-          setIsSpeaking(false);
-          setInterviewComplete(true);
-        }, 1500);
+  // ─── Play Polly Audio (base64 MP3) ────────────────────────────────
+  const playAudio = useCallback(async (base64Audio: string) => {
+    try {
+      const binary = atob(base64Audio);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
       }
-    }, 2000);
-  };
+
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext();
+      }
+
+      const audioBuffer = await audioContextRef.current.decodeAudioData(
+        bytes.buffer,
+      );
+      const source = audioContextRef.current.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContextRef.current.destination);
+
+      source.onended = () => {
+        setIsSpeaking(false);
+        setStatusText("Tap mic to respond");
+      };
+
+      source.start();
+    } catch (err) {
+      console.error("Audio playback error:", err);
+      setIsSpeaking(false);
+      setStatusText("Tap mic to respond");
+    }
+  }, []);
+
+  // ─── Handle WebSocket Messages ────────────────────────────────────
+  const handleWSMessage = useCallback(
+    (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(event.data);
+
+        switch (msg.type) {
+          // Interview started — backend confirms
+          case "interview_started":
+            setStatusText("Starting interview...");
+            break;
+
+          // Backend sends next question + Polly audio
+          case "question":
+            setMessages((prev) => [
+              ...prev,
+              { role: "ai", text: msg.question },
+            ]);
+            setIsSpeaking(true);
+            setStatusText("Agent is speaking...");
+            playAudio(msg.audio);
+            break;
+
+          // Backend is transcribing the answer
+          case "transcribing":
+            setStatusText("Processing your answer...");
+            break;
+
+          // Backend confirms answer was recorded
+          case "answer_recorded":
+            setMessages((prev) => [
+              ...prev,
+              { role: "user", text: msg.answer },
+            ]);
+            break;
+
+          // All questions done
+          case "interview_complete":
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "ai",
+                text: "Thank you so much for your time and honest feedback! This has been incredibly valuable. The interview is now complete.",
+              },
+            ]);
+            setInterviewComplete(true);
+            setStatusText("Interview complete");
+            break;
+
+          // Any backend error
+          case "error":
+            console.error("Backend error:", msg.message);
+            setStatusText("An error occurred. Please try again.");
+            break;
+        }
+      } catch (err) {
+        console.error("WS message parse error:", err);
+      }
+    },
+    [playAudio],
+  );
+
+  // ─── Start Interview → Connect WebSocket ─────────────────────────
+  const handleStartInterview = useCallback(async () => {
+    setStep("interview");
+    setStatusText("Connecting...");
+
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setStatusText("Connected! Starting interview...");
+      ws.send(
+        JSON.stringify({
+          type: "start_interview",
+          projectId: selectedProjectId,
+          personDetails: userDetails,
+        }),
+      );
+    };
+
+    ws.onmessage = handleWSMessage;
+
+    ws.onerror = (err) => {
+      console.error("WebSocket error:", err);
+      setStatusText("Connection error. Please refresh.");
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket closed");
+    };
+  }, [selectedProjectId, userDetails, handleWSMessage]);
+
+  const handleMicClick = useCallback(async () => {
+    if (isListening || isSpeaking || interviewComplete) return;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+
+      wsRef.current?.send(JSON.stringify({ type: "start_recording" }));
+      setIsListening(true);
+      setStatusText("Listening...");
+
+      // ✅ Use webm format which is supported by all browsers
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(e.data);
+        }
+      };
+
+      mediaRecorder.start(250);
+    } catch (err) {
+      console.error("Mic access error:", err);
+      setStatusText("Microphone access denied.");
+    }
+  }, [isListening, isSpeaking, interviewComplete]);
+
+  // ─── Mic Button — Stop Recording ─────────────────────────────────
+  const handleMicRelease = useCallback(() => {
+    if (!isListening) return;
+
+    // Stop media recorder
+    mediaRecorderRef.current?.stop();
+    mediaRecorderRef.current?.stream
+      .getTracks()
+      .forEach((track) => track.stop());
+
+    // Tell backend recording stopped
+    wsRef.current?.send(JSON.stringify({ type: "stop_recording" }));
+    setIsListening(false);
+    setStatusText("Processing your answer...");
+  }, [isListening]);
+
+  // ─── Cleanup on unmount ───────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      wsRef.current?.close();
+      audioContextRef.current?.close();
+    };
+  }, []);
 
   const canContinueDetails =
     userDetails.name.trim() &&
     userDetails.age.trim() &&
     userDetails.location.trim();
 
+  // ─── UI ───────────────────────────────────────────────────────────
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-2rem)] p-6 lg:p-8 max-w-4xl mx-auto w-full">
       <AnimatePresence mode="wait">
-        {/* Step 1: Agent Selection */}
-        {step === "agent" && (
-          <motion.div
-            key="agent"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            className="flex-1 flex items-center justify-center"
-          >
-            <div className="text-center space-y-6">
-              <h2 className="text-xl font-semibold">Choose Voice Agent</h2>
-              <p className="text-sm text-muted-foreground">
-                Select an agent to conduct the customer interview
-              </p>
-              <button
-                onClick={() => setStep("details")}
-                className="group mx-auto flex flex-col items-center gap-4 p-6 rounded-xl border-2 border-border hover:border-accent bg-card shadow-sm hover:shadow-glow transition-all"
-              >
-                <div className="relative">
-                  <Image
-                    src={voiceAgentAvatar}
-                    alt="Voice Agent"
-                    width={28}
-                    height={28}
-                    className="w-28 h-28 rounded-full object-cover border-4 border-accent/20 group-hover:border-accent/50 transition-colors"
-                  />
-                  <span className="absolute bottom-1 right-1 h-4 w-4 rounded-full bg-success border-2 border-card" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">Actual End Customer</p>
-                  <p className="text-xs text-muted-foreground">
-                    Voice Agent Interviewer
-                  </p>
-                </div>
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Step 2: User Details */}
+        {/* Step 1: User Details */}
         {step === "details" && (
           <motion.div
             key="details"
@@ -195,18 +312,25 @@ const InterviewsPage = () => {
                 </p>
               </div>
               <div className="bg-card rounded-lg border p-6 space-y-4">
-                <div>
-                  <label className="text-xs font-medium mb-1.5 block">
-                    Name
-                  </label>
-                  <Input
-                    placeholder="Your full name"
-                    value={userDetails.name}
-                    onChange={(e) =>
-                      setUserDetails((d) => ({ ...d, name: e.target.value }))
-                    }
-                  />
-                </div>
+                {(["name", "gender", "location", "education"] as const).map(
+                  (field) => (
+                    <div key={field}>
+                      <label className="text-xs font-medium mb-1.5 block capitalize">
+                        {field}
+                      </label>
+                      <Input
+                        placeholder={`Your ${field}`}
+                        value={userDetails[field]}
+                        onChange={(e) =>
+                          setUserDetails((d) => ({
+                            ...d,
+                            [field]: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  ),
+                )}
                 <div>
                   <label className="text-xs font-medium mb-1.5 block">
                     Age
@@ -222,15 +346,16 @@ const InterviewsPage = () => {
                 </div>
                 <div>
                   <label className="text-xs font-medium mb-1.5 block">
-                    Location
+                    Income
                   </label>
                   <Input
-                    placeholder="City, Country"
-                    value={userDetails.location}
+                    type="number"
+                    placeholder="Your income"
+                    value={userDetails.income || ""}
                     onChange={(e) =>
                       setUserDetails((d) => ({
                         ...d,
-                        location: e.target.value,
+                        income: Number(e.target.value),
                       }))
                     }
                   />
@@ -248,7 +373,7 @@ const InterviewsPage = () => {
           </motion.div>
         )}
 
-        {/* Step 3: Problem Selection */}
+        {/* Step 2: Problem Selection */}
         {step === "problem" && (
           <motion.div
             key="problem"
@@ -267,34 +392,40 @@ const InterviewsPage = () => {
                 </p>
               </div>
               <div className="bg-card rounded-lg border p-6 space-y-4">
-                <Select
-                  value={selectedProjectId}
-                  onValueChange={setSelectedProjectId}
-                >
-                  <SelectTrigger className="text-sm">
-                    <SelectValue placeholder="Select a problem statement" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {loading ? (
+                  <p className="text-sm text-muted-foreground text-center">
+                    Loading projects...
+                  </p>
+                ) : (
+                  <Select
+                    value={selectedProjectId}
+                    onValueChange={setSelectedProjectId}
+                  >
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="Select a problem statement" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {projects.map((p) => (
+                        <SelectItem key={p.projectId} value={p.projectId}>
+                          {p.projectName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 {selectedProject && (
                   <motion.p
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md"
                   >
-                    {selectedProject.problemStatement}
+                    {selectedProject.refinedProblemStatement}
                   </motion.p>
                 )}
                 <Button
                   className="w-full bg-gradient-warm text-accent-foreground hover:opacity-90"
                   disabled={!selectedProjectId}
-                  onClick={() => setStep("interview")}
+                  onClick={handleStartInterview}
                 >
                   Start Interview
                   <ChevronRight className="h-4 w-4 ml-1" />
@@ -304,7 +435,7 @@ const InterviewsPage = () => {
           </motion.div>
         )}
 
-        {/* Step 4 & 5: Voice Agent Interview */}
+        {/* Step 3: Voice Interview */}
         {step === "interview" && (
           <motion.div
             key="interview"
@@ -317,7 +448,7 @@ const InterviewsPage = () => {
             <div className="flex items-center gap-2 bg-card rounded-lg border px-4 py-2.5 shrink-0">
               <Lock className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-xs font-medium truncate">
-                {selectedProject?.name}
+                {selectedProject?.projectName}
               </span>
               <span className="text-[10px] text-muted-foreground ml-auto">
                 🔒 Locked
@@ -376,14 +507,9 @@ const InterviewsPage = () => {
                 )}
               </div>
 
+              {/* Status text */}
               <p className="text-xs text-muted-foreground mb-3 shrink-0">
-                {isSpeaking
-                  ? "Agent is speaking..."
-                  : isListening
-                    ? "Listening..."
-                    : interviewComplete
-                      ? "Interview complete"
-                      : "Tap mic to respond"}
+                {statusText}
               </p>
 
               {/* Chat transcript */}
@@ -411,12 +537,15 @@ const InterviewsPage = () => {
                 ))}
               </div>
 
-              {/* Mic button */}
+              {/* Mic button — hold to speak */}
               {!interviewComplete && (
-                <div className="mt-4 shrink-0">
+                <div className="mt-4 shrink-0 flex flex-col items-center gap-2">
                   <button
-                    onClick={handleMicClick}
-                    disabled={isListening || isSpeaking}
+                    onMouseDown={handleMicClick}
+                    onMouseUp={handleMicRelease}
+                    onTouchStart={handleMicClick}
+                    onTouchEnd={handleMicRelease}
+                    disabled={isSpeaking}
                     className={`h-14 w-14 rounded-full flex items-center justify-center transition-all ${
                       isListening
                         ? "bg-info text-info-foreground animate-pulse"
@@ -431,9 +560,13 @@ const InterviewsPage = () => {
                       <Mic className="h-5 w-5" />
                     )}
                   </button>
+                  <p className="text-[10px] text-muted-foreground">
+                    {isListening ? "Release to submit answer" : "Hold to speak"}
+                  </p>
                 </div>
               )}
 
+              {/* Interview complete */}
               {interviewComplete && (
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -450,7 +583,7 @@ const InterviewsPage = () => {
                     onClick={() => {
                       const transcript = {
                         user: userDetails,
-                        problem: selectedProject?.name,
+                        problem: selectedProject?.projectName,
                         conversation: messages.map((m) => ({
                           role: m.role === "ai" ? "AI" : "User",
                           text: m.text,

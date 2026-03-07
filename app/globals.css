@@ -45,6 +45,14 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+  /* Add these: */
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-sunken: var(--surface-sunken);
 }
 
 :root {
@@ -80,6 +88,26 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  /* Add these custom tokens: */
+  --accent: oklch(0.75 0.18 70);
+  /* ~hsl(38 92% 50%) warm amber */
+  --accent-foreground: oklch(1 0 0);
+
+  --success: oklch(0.6 0.15 155);
+  --success-foreground: oklch(1 0 0);
+  --warning: oklch(0.75 0.18 70);
+  --warning-foreground: oklch(1 0 0);
+  --info: oklch(0.65 0.18 240);
+  --info-foreground: oklch(1 0 0);
+
+  --surface-elevated: oklch(1 0 0);
+  --surface-sunken: oklch(0.96 0 0);
+
+  --gradient-warm: linear-gradient(135deg, oklch(0.75 0.18 70), oklch(0.72 0.2 55));
+  --gradient-slate: linear-gradient(135deg, oklch(0.205 0 0), oklch(0.25 0.02 240));
+  --gradient-subtle: linear-gradient(180deg, oklch(1 0 0), oklch(0.97 0 0));
+
+  --shadow-glow: 0 0 20px oklch(0.75 0.18 70 / 0.15);
 }
 
 .dark {
@@ -114,13 +142,45 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --surface-elevated: oklch(0.24 0 0);
+  --surface-sunken: oklch(0.13 0 0);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .text-gradient-warm {
+    background: var(--gradient-warm);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .bg-gradient-warm {
+    background: var(--gradient-warm);
+  }
+
+  .bg-gradient-slate {
+    background: var(--gradient-slate);
+  }
+
+  .bg-surface-elevated {
+    background-color: var(--surface-elevated);
+  }
+
+  .bg-surface-sunken {
+    background-color: var(--surface-sunken);
+  }
+
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
   }
 }

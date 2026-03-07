@@ -1,10 +1,13 @@
 "use client";
+
 import { useState, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Target, AlertTriangle, ChevronRight } from "lucide-react";
-import AppLayout from "@/components/AppLayout";
+import { motion } from "framer-motion";
+
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+
 import {
   Select,
   SelectContent,
@@ -12,21 +15,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
+
 import {
   projects,
-  questions,
   personas,
+  questions,
   type Persona,
 } from "@/data/mockPersonData";
 
-const PersonasPage = () => {
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-  const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null);
+export default function PersonasPage() {
+  const [selectedProjectId, setSelectedProjectId] = useState("");
 
+  const [selectedPersonas, setSelectedPersonas] = useState<Persona[]>([]);
+
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
   const projectQuestions = useMemo(
     () => questions.filter((q) => q.projectId === selectedProjectId),
     [selectedProjectId],
@@ -37,260 +39,197 @@ const PersonasPage = () => {
     [selectedProjectId],
   );
 
-  const selectedProject = projects.find((p) => p.id === selectedProjectId);
+  const togglePersona = (persona: Persona) => {
+    const exists = selectedPersonas.find((p) => p.id === persona.id);
+
+    if (exists) {
+      setSelectedPersonas((prev) => prev.filter((p) => p.id !== persona.id));
+
+      return;
+    }
+
+    if (selectedPersonas.length === 2) return;
+
+    setSelectedPersonas((prev) => [...prev, persona]);
+  };
+  const startInterview = () => {
+    const payload = {
+      projectId: selectedProjectId,
+
+      questions: projectQuestions.map((q) => ({
+        id: q.id,
+        title: q.title,
+        description: q.description,
+      })),
+
+      personaIds: selectedPersonas.map((p) => p.id),
+    };
+
+    console.log("Interview Payload:", payload);
+
+    /*
+      CALL API HERE
+
+      fetch("/api/interview",{
+        method:"POST",
+        body:JSON.stringify(payload)
+      })
+    */
+  };
+
+  const canStart = selectedProjectId && selectedPersonas.length === 2;
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
-      {/* Top bar */}
-      <div className="px-6 py-4 border-b bg-card">
-        <h1 className="text-lg font-semibold">AI Persona Simulation</h1>
+    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+
+      <div className="px-6 py-4 border-b">
+        <h1 className="text-lg font-semibold">AI Persona Interview</h1>
+
         <p className="text-sm text-muted-foreground">
-          Explore hypotheses with AI-generated personas before engaging real
-          customers.
+          Select project, review questions and choose two personas
         </p>
       </div>
 
-      {/* Split layout */}
-      <div className="flex-1 flex min-h-0">
-        {/* Left Panel – 40% */}
-        <div className="w-2/5 border-r flex flex-col min-h-0 bg-card/50">
-          <div className="p-4 border-b">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
-              Project / Problem Statement
-            </label>
-            <Select
-              value={selectedProjectId}
-              onValueChange={(v) => {
-                setSelectedProjectId(v);
-                setSelectedPersona(null);
-              }}
+      <div className="flex flex-col flex-1 p-6 space-y-6">
+
+        <Select
+          value={selectedProjectId}
+          onValueChange={(v) => {
+            setSelectedProjectId(v);
+
+            setSelectedPersonas([]);
+          }}
+        >
+          <SelectTrigger className="w-87.5">
+            <SelectValue placeholder="Choose Problem" />
+          </SelectTrigger>
+
+          <SelectContent>
+            {projects.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Main Layout */}
+
+        {selectedProject && (
+          <div className="grid grid-cols-2 gap-6 flex-1">
+            {/* LEFT SIDE — QUESTIONS */}
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="border rounded-xl p-5 overflow-y-auto"
             >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a project…" />
-              </SelectTrigger>
-              <SelectContent>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {selectedProject && (
-              <motion.p
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-3 text-sm text-muted-foreground leading-relaxed"
-              >
-                {selectedProject.problemStatement}
-              </motion.p>
-            )}
-          </div>
+              <h2 className="font-semibold mb-4">Questions</h2>
 
-          <ScrollArea className="flex-1">
-            <div className="p-4 space-y-3">
-              {!selectedProjectId && (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  Select a project to view questions.
-                </p>
-              )}
-              <AnimatePresence mode="wait">
+              <div className="space-y-3">
                 {projectQuestions.map((q, i) => (
-                  <motion.div
-                    key={q.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ delay: i * 0.05 }}
-                  >
-                    <Card className="shadow-sm hover:shadow-md transition-shadow">
-                      <CardContent className="p-4">
-                        <div className="flex items-start gap-3">
-                          <span className="shrink-0 h-6 w-6 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center mt-0.5">
-                            {i + 1}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium leading-snug">
-                              {q.title}
-                            </p>
-                            {q.description && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {q.description}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
+                  <Card key={q.id}>
+                    <CardContent className="p-4 text-sm">
+                      <p className="font-medium mb-1">
+                        {i + 1}. {q.title}
+                      </p>
+
+                      <p className="text-muted-foreground text-xs">
+                        {q.description}
+                      </p>
+                    </CardContent>
+                  </Card>
                 ))}
-              </AnimatePresence>
-            </div>
-          </ScrollArea>
-        </div>
+              </div>
+            </motion.div>
 
-        {/* Right Panel – 60% */}
-        <div className="w-3/5 flex flex-col min-h-0">
-          <ScrollArea className="flex-1">
-            <div className="p-6">
-              {!selectedProjectId && (
-                <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-                  Select a project to view personas.
-                </div>
-              )}
+            {/* RIGHT SIDE — PERSONAS */}
 
-              <AnimatePresence mode="wait">
-                {selectedProjectId && !selectedPersona && (
-                  <motion.div
-                    key="persona-grid"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                  >
-                    <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
-                      Personas ({projectPersonas.length})
-                    </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {projectPersonas.map((persona, i) => (
-                        <motion.div
-                          key={persona.id}
-                          initial={{ opacity: 0, y: 12 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: i * 0.08 }}
-                        >
-                          <Card
-                            className="cursor-pointer hover:shadow-lg hover:border-accent/40 transition-all group"
-                            onClick={() => setSelectedPersona(persona)}
-                          >
-                            <CardContent className="p-5 flex items-center gap-4">
-                              <Avatar className="h-14 w-14 ring-2 ring-border group-hover:ring-accent/40 transition-all">
-                                <AvatarImage
-                                  src={persona.image}
-                                  alt={persona.name}
-                                />
-                                <AvatarFallback>
-                                  {persona.name
-                                    .split(" ")
-                                    .map((n) => n[0])
-                                    .join("")}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm">
-                                  {persona.name}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {persona.role}
-                                </p>
-                              </div>
-                              <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </CardContent>
-                          </Card>
-                        </motion.div>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="border rounded-xl p-5 overflow-y-auto"
+            >
+              <div className="flex justify-between mb-4">
+                <h2 className="font-semibold">Select Two Personas</h2>
 
-                {selectedPersona && (
-                  <motion.div
-                    key="persona-detail"
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="mb-4 -ml-2 text-muted-foreground"
-                      onClick={() => setSelectedPersona(null)}
+                <Badge>{selectedPersonas.length}/2</Badge>
+              </div>
+
+              <div className="space-y-4">
+                {projectPersonas.map((persona, i) => {
+                  const selected = selectedPersonas.find(
+                    (p) => p.id === persona.id,
+                  );
+
+                  return (
+                    <motion.div
+                      key={persona.id}
+                      initial={{
+                        opacity: 0,
+                        y: 10,
+                      }}
+                      animate={{
+                        opacity: 1,
+                        y: 0,
+                      }}
+                      transition={{
+                        delay: i * 0.07,
+                      }}
                     >
-                      <ArrowLeft className="h-4 w-4 mr-1" />
-                      Back to Personas
-                    </Button>
+                      <Card
+                        onClick={() => togglePersona(persona)}
+                        className={`cursor-pointer transition
+                          ${
+                            selected
+                              ? "border-primary shadow-md"
+                              : "hover:shadow-lg"
+                          }
+                          `}
+                      >
+                        <CardContent className="p-4 flex items-center gap-4">
+                          <Avatar className="h-14 w-14">
+                            <AvatarImage src={persona.image} />
 
-                    <div className="flex items-center gap-5 mb-6">
-                      <Avatar className="h-20 w-20 ring-2 ring-border">
-                        <AvatarImage
-                          src={selectedPersona.image}
-                          alt={selectedPersona.name}
-                        />
-                        <AvatarFallback>
-                          {selectedPersona.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h2 className="text-xl font-semibold">
-                          {selectedPersona.name}
-                        </h2>
-                        <Badge variant="secondary" className="mt-1">
-                          {selectedPersona.role}
-                        </Badge>
-                      </div>
-                    </div>
+                            <AvatarFallback>
+                              {persona.name
+                                .split(" ")
+                                .map((n) => n[0])
+                                .join("")}
+                            </AvatarFallback>
+                          </Avatar>
 
-                    <Separator className="mb-6" />
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">
+                              {persona.name}
+                            </p>
 
-                    <div className="space-y-6">
-                      <section>
-                        <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                          Background
-                        </h3>
-                        <p className="text-sm leading-relaxed">
-                          {selectedPersona.background}
-                        </p>
-                      </section>
+                            <p className="text-xs text-muted-foreground">
+                              {persona.role}
+                            </p>
+                          </div>
 
-                      <section>
-                        <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
-                          <Target className="h-4 w-4" /> Goals
-                        </h3>
-                        <ul className="space-y-2">
-                          {selectedPersona.goals.map((goal, i) => (
-                            <li
-                              key={i}
-                              className="flex items-start gap-2 text-sm"
-                            >
-                              <span className="h-5 w-5 rounded-full bg-success/10 text-success flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">
-                                {i + 1}
-                              </span>
-                              {goal}
-                            </li>
-                          ))}
-                        </ul>
-                      </section>
+                          {selected && <Badge>Selected</Badge>}
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </div>
+        )}
 
-                      <section>
-                        <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
-                          <AlertTriangle className="h-4 w-4" /> Pain Points
-                        </h3>
-                        <ul className="space-y-2">
-                          {selectedPersona.painPoints.map((point, i) => (
-                            <li
-                              key={i}
-                              className="flex items-start gap-2 text-sm"
-                            >
-                              <span className="h-5 w-5 rounded-full bg-destructive/10 text-destructive flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">
-                                !
-                              </span>
-                              {point}
-                            </li>
-                          ))}
-                        </ul>
-                      </section>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </ScrollArea>
-        </div>
+        {/* Start Button */}
+
+        <Button
+          onClick={startInterview}
+          disabled={!canStart}
+          className="h-12 text-lg"
+        >
+          Start Interview
+        </Button>
       </div>
     </div>
   );
-};
-
-export default PersonasPage;
+}
