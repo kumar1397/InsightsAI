@@ -4,8 +4,6 @@ import {
   FolderPlus,
   Brain,
   MessageSquare,
-  BarChart3,
-  Briefcase,
   FileText,
   Settings,
 } from "lucide-react";
@@ -30,8 +28,6 @@ const mainItems = [
 const workflowItems = [
   { title: "AI Personas", url: "/personas", icon: Brain },
   { title: "Interviews", url: "/interviews", icon: MessageSquare },
-  { title: "Technical Insights", url: "/technical-insights", icon: BarChart3 },
-  { title: "Business Insights", url: "/business-insights", icon: Briefcase },
   { title: "Reports", url: "/reports", icon: FileText },
 ];
 

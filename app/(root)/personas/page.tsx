@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 import {
   Select,
@@ -16,218 +17,340 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import {
-  projects,
-  personas,
-  questions,
-  type Persona,
-} from "@/data/mockPersonData";
+import { api } from "@/lib/api";
+
+type Project = {
+  projectId: string;
+  projectName: string;
+};
+
+type Persona = {
+  personaId: string;
+  personaName: string;
+  personaDescription: string;
+  personaPrompt?: string;
+};
+
+type PersonaResult = {
+  persona_id: string;
+  persona_name: string;
+  conversation_id: string;
+  pdf_filename: string;
+  download_url?: string;
+  transcript: { turn: number; question: string; answer: string }[];
+};
+
+type InterviewResult = {
+  project_id: string;
+  project_name: string;
+  message: string;
+  results: PersonaResult[];
+};
 
 export default function PersonasPage() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [personas, setPersonas] = useState<Persona[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
-
   const [selectedPersonas, setSelectedPersonas] = useState<Persona[]>([]);
+  const [interviewResult, setInterviewResult] =
+    useState<InterviewResult | null>(null);
 
-  const selectedProject = projects.find((p) => p.id === selectedProjectId);
-  const projectQuestions = useMemo(
-    () => questions.filter((q) => q.projectId === selectedProjectId),
-    [selectedProjectId],
-  );
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [loadingPersonas, setLoadingPersonas] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const projectPersonas = useMemo(
-    () => personas.filter((p) => p.projectId === selectedProjectId),
-    [selectedProjectId],
-  );
+  useEffect(() => {
+    setLoadingProjects(true);
+    api
+      .getProjects()
+      .then((data) => setProjects(data.projects ?? data))
+      .catch(() => setError("Failed to load projects."))
+      .finally(() => setLoadingProjects(false));
+  }, []);
+
+  useEffect(() => {
+    setLoadingPersonas(true);
+    api
+      .getPersonas()
+      .then((data) => setPersonas(data.personas ?? data))
+      .catch(() => setError("Failed to load personas."))
+      .finally(() => setLoadingPersonas(false));
+  }, []);
 
   const togglePersona = (persona: Persona) => {
-    const exists = selectedPersonas.find((p) => p.id === persona.id);
-
+    const exists = selectedPersonas.find(
+      (p) => p.personaId === persona.personaId,
+    );
     if (exists) {
-      setSelectedPersonas((prev) => prev.filter((p) => p.id !== persona.id));
-
+      setSelectedPersonas((prev) =>
+        prev.filter((p) => p.personaId !== persona.personaId),
+      );
       return;
     }
-
     if (selectedPersonas.length === 2) return;
-
     setSelectedPersonas((prev) => [...prev, persona]);
   };
-  const startInterview = () => {
-    const payload = {
-      projectId: selectedProjectId,
 
-      questions: projectQuestions.map((q) => ({
-        id: q.id,
-        title: q.title,
-        description: q.description,
-      })),
+  const startInterview = async () => {
+    if (!canStart) return;
+    setSubmitting(true);
+    setError(null);
+    setInterviewResult(null);
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_SING_AWS_URL}/run-interview`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project_id: selectedProjectId,
+            persona_ids: selectedPersonas.map((p) => p.personaId),
+          }),
+        },
+      );
 
-      personaIds: selectedPersonas.map((p) => p.id),
-    };
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err);
+      }
 
-    console.log("Interview Payload:", payload);
+      const data = await res.json();
+      setInterviewResult(data);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to start interview. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-    /*
-      CALL API HERE
-
-      fetch("/api/interview",{
-        method:"POST",
-        body:JSON.stringify(payload)
-      })
-    */
+  const resetInterview = () => {
+    setInterviewResult(null);
+    setSelectedPersonas([]);
+    setSelectedProjectId("");
   };
 
   const canStart = selectedProjectId && selectedPersonas.length === 2;
 
+  // ── Success Screen ──────────────────────────────────────────────
+  if (interviewResult) {
+    return (
+      <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+        <div className="px-6 py-4 border-b">
+          <h1 className="text-lg font-semibold">AI Persona Interview</h1>
+          <p className="text-sm text-muted-foreground">Interview completed</p>
+        </div>
+
+        <div className="flex flex-col flex-1 p-6 space-y-6 overflow-y-auto">
+          {/* Success Banner */}
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-green-50 border border-green-200 rounded-xl px-5 py-4 flex items-start gap-3"
+          >
+            <span className="text-green-500 text-xl mt-0.5">✓</span>
+            <div>
+              <p className="font-semibold text-green-800">
+                Interviews Completed Successfully
+              </p>
+              <p className="text-sm text-green-700 mt-0.5">
+                {interviewResult.project_name} ·{" "}
+                {interviewResult.results.length} persona
+                {interviewResult.results.length > 1 ? "s" : ""} interviewed
+              </p>
+            </div>
+          </motion.div>
+
+          {/* Results Cards */}
+          <div className="grid grid-cols-2 gap-4">
+            {interviewResult.results.map((result, i) => (
+              <motion.div
+                key={result.persona_id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.1 }}
+              >
+                <Card>
+                  <CardContent className="p-5 space-y-3">
+                    {/* Persona Header */}
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-10 w-10">
+                        <AvatarFallback>
+                          {result.persona_name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="font-medium text-sm">
+                          {result.persona_name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {result.persona_id}
+                        </p>
+                      </div>
+                      <Badge className="ml-auto bg-green-100 text-green-700 hover:bg-green-100">
+                        Done
+                      </Badge>
+                    </div>
+
+                    {/* Stats */}
+                    <div className="text-xs text-muted-foreground space-y-1 border-t pt-3">
+                      <p>💬 {result.transcript.length} questions answered</p>
+                      <p className="truncate">
+                        🗂 ID: {result.conversation_id}
+                      </p>
+                    </div>
+
+                    {/* Download */}
+                    {result.download_url && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-1"
+                        onClick={() =>
+                          window.open(result.download_url!, "_blank")
+                        }
+                      >
+                        ⬇ Download Transcript (PDF)
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Run Again */}
+          <Button variant="outline" onClick={resetInterview} className="h-11">
+            Run Another Interview
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main Screen ─────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)]">
-
       <div className="px-6 py-4 border-b">
         <h1 className="text-lg font-semibold">AI Persona Interview</h1>
-
         <p className="text-sm text-muted-foreground">
-          Select project, review questions and choose two personas
+          Select a project and choose two personas to interview
         </p>
       </div>
 
-      <div className="flex flex-col flex-1 p-6 space-y-6">
+      <div className="flex flex-col flex-1 p-6 space-y-6 overflow-hidden">
+        {error && (
+          <div className="text-sm text-red-500 bg-red-50 border border-red-200 rounded-md px-4 py-2">
+            {error}
+          </div>
+        )}
 
-        <Select
-          value={selectedProjectId}
-          onValueChange={(v) => {
-            setSelectedProjectId(v);
+        {loadingProjects ? (
+          <Skeleton className="h-10 w-87 rounded-md" />
+        ) : (
+          <Select
+            value={selectedProjectId}
+            onValueChange={(v) => {
+              setSelectedProjectId(v);
+              setSelectedPersonas([]);
+            }}
+          >
+            <SelectTrigger className="w-87.5">
+              <SelectValue placeholder="Choose a Project" />
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((p) => (
+                <SelectItem key={p.projectId} value={p.projectId}>
+                  {p.projectName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
-            setSelectedPersonas([]);
-          }}
-        >
-          <SelectTrigger className="w-87.5">
-            <SelectValue placeholder="Choose Problem" />
-          </SelectTrigger>
+        {selectedProjectId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="border rounded-xl p-5 overflow-y-auto flex-1"
+          >
+            <div className="flex justify-between mb-4">
+              <h2 className="font-semibold">Select Two Personas</h2>
+              <Badge>{selectedPersonas.length}/2</Badge>
+            </div>
 
-          <SelectContent>
-            {projects.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Main Layout */}
-
-        {selectedProject && (
-          <div className="grid grid-cols-2 gap-6 flex-1">
-            {/* LEFT SIDE — QUESTIONS */}
-
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="border rounded-xl p-5 overflow-y-auto"
-            >
-              <h2 className="font-semibold mb-4">Questions</h2>
-
-              <div className="space-y-3">
-                {projectQuestions.map((q, i) => (
-                  <Card key={q.id}>
-                    <CardContent className="p-4 text-sm">
-                      <p className="font-medium mb-1">
-                        {i + 1}. {q.title}
-                      </p>
-
-                      <p className="text-muted-foreground text-xs">
-                        {q.description}
-                      </p>
-                    </CardContent>
-                  </Card>
+            {loadingPersonas ? (
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-20 w-full rounded-xl" />
                 ))}
               </div>
-            </motion.div>
-
-            {/* RIGHT SIDE — PERSONAS */}
-
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="border rounded-xl p-5 overflow-y-auto"
-            >
-              <div className="flex justify-between mb-4">
-                <h2 className="font-semibold">Select Two Personas</h2>
-
-                <Badge>{selectedPersonas.length}/2</Badge>
-              </div>
-
-              <div className="space-y-4">
-                {projectPersonas.map((persona, i) => {
+            ) : personas.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No personas found.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                {personas.map((persona, i) => {
                   const selected = selectedPersonas.find(
-                    (p) => p.id === persona.id,
+                    (p) => p.personaId === persona.personaId,
                   );
+                  const disabled = !selected && selectedPersonas.length === 2;
 
                   return (
                     <motion.div
-                      key={persona.id}
-                      initial={{
-                        opacity: 0,
-                        y: 10,
-                      }}
-                      animate={{
-                        opacity: 1,
-                        y: 0,
-                      }}
-                      transition={{
-                        delay: i * 0.07,
-                      }}
+                      key={persona.personaId}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.07 }}
                     >
                       <Card
-                        onClick={() => togglePersona(persona)}
-                        className={`cursor-pointer transition
-                          ${
-                            selected
-                              ? "border-primary shadow-md"
-                              : "hover:shadow-lg"
-                          }
-                          `}
+                        onClick={() => !disabled && togglePersona(persona)}
+                        className={`transition
+                          ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}
+                          ${selected ? "border-primary shadow-md" : "hover:shadow-lg"}
+                        `}
                       >
                         <CardContent className="p-4 flex items-center gap-4">
-                          <Avatar className="h-14 w-14">
-                            <AvatarImage src={persona.image} />
-
+                          <Avatar className="h-12 w-12">
                             <AvatarFallback>
-                              {persona.name
+                              {persona.personaName
                                 .split(" ")
                                 .map((n) => n[0])
                                 .join("")}
                             </AvatarFallback>
                           </Avatar>
-
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">
-                              {persona.name}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">
+                              {persona.personaName}
                             </p>
-
-                            <p className="text-xs text-muted-foreground">
-                              {persona.role}
+                            <p className="text-xs text-muted-foreground line-clamp-2">
+                              {persona.personaDescription}
                             </p>
                           </div>
-
-                          {selected && <Badge>Selected</Badge>}
+                          {selected && (
+                            <Badge className="shrink-0">Selected</Badge>
+                          )}
                         </CardContent>
                       </Card>
                     </motion.div>
                   );
                 })}
               </div>
-            </motion.div>
-          </div>
+            )}
+          </motion.div>
         )}
-
-        {/* Start Button */}
 
         <Button
           onClick={startInterview}
-          disabled={!canStart}
+          disabled={!canStart || submitting}
           className="h-12 text-lg"
         >
-          Start Interview
+          {submitting ? "Starting..." : "Start Interview"}
         </Button>
       </div>
     </div>
