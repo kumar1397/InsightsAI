@@ -223,7 +223,7 @@ export default function NewProject() {
                   </p>
                   <p className="text-xs text-muted-foreground/70">
                     Enter your problem statement and target consumers, then let
-                    AI refine your research approach
+                    AI refine you statement
                   </p>
                 </div>
               </motion.div>
