@@ -221,12 +221,6 @@ const ReportsPage = () => {
                     <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
                       <FileText className="h-6 w-6 text-muted-foreground" />
                     </div>
-                    <div>
-                      <p className="font-medium">No report available for this problem.</p>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Generate one from AI personas and user conversations.
-                      </p>
-                    </div>
                     <Button onClick={handleGenerate} className="gap-2">
                       <Sparkles className="h-4 w-4" /> Generate Report
                     </Button>

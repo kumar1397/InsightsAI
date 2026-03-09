@@ -5,7 +5,6 @@ import {
   Brain,
   MessageSquare,
   FileText,
-  Settings,
 } from "lucide-react";
 import {
   Sidebar,
@@ -90,26 +89,6 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-
-      <SidebarFooter className="border-t p-3">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <Link
-                href="/settings"
-                className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent transition-colors ${
-                  pathname === "/settings"
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
-                    : ""
-                }`}
-              >
-                <Settings className="h-4 w-4" />
-                <span>Settings</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
     </Sidebar>
   );
 }

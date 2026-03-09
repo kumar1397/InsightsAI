@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-
+import toast from "react-hot-toast";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Loader2 } from "lucide-react";
 
 import {
   Select,
@@ -97,6 +98,7 @@ export default function PersonasPage() {
     setSubmitting(true);
     setError(null);
     setInterviewResult(null);
+    const toastId = toast.loading("Running interviews...");
     try {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_SING_AWS_URL}/run-interview`,
@@ -117,8 +119,12 @@ export default function PersonasPage() {
 
       const data = await res.json();
       setInterviewResult(data);
+      toast.success("Interviews completed successfully!", { id: toastId });
     } catch (err) {
       console.error(err);
+      toast.error("Failed to start interview. Please try again.", {
+        id: toastId,
+      });
       setError("Failed to start interview. Please try again.");
     } finally {
       setSubmitting(false);
@@ -133,7 +139,6 @@ export default function PersonasPage() {
 
   const canStart = selectedProjectId && selectedPersonas.length === 2;
 
-  // ── Success Screen ──────────────────────────────────────────────
   if (interviewResult) {
     return (
       <div className="flex flex-col h-[calc(100vh-3.5rem)]">
@@ -198,10 +203,8 @@ export default function PersonasPage() {
 
                     {/* Stats */}
                     <div className="text-xs text-muted-foreground space-y-1 border-t pt-3">
-                      <p>💬 {result.transcript.length} questions answered</p>
-                      <p className="truncate">
-                        🗂 ID: {result.conversation_id}
-                      </p>
+                      <p> {result.transcript.length} questions answered</p>
+                      <p className="truncate">ID: {result.conversation_id}</p>
                     </div>
 
                     {/* Download */}
@@ -214,7 +217,7 @@ export default function PersonasPage() {
                           window.open(result.download_url!, "_blank")
                         }
                       >
-                        ⬇ Download Transcript (PDF)
+                        Download Transcript (PDF)
                       </Button>
                     )}
                   </CardContent>
@@ -231,8 +234,24 @@ export default function PersonasPage() {
       </div>
     );
   }
-
-  // ── Main Screen ─────────────────────────────────────────────────
+  if (loadingProjects || loadingPersonas) {
+    return (
+      <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+        <div className="px-6 py-4 border-b">
+          <h1 className="text-lg font-semibold">AI Persona Interview</h1>
+          <p className="text-sm text-muted-foreground">
+            Select a project and choose two personas to interview
+          </p>
+        </div>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Loading data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)]">
       <div className="px-6 py-4 border-b">
@@ -350,7 +369,14 @@ export default function PersonasPage() {
           disabled={!canStart || submitting}
           className="h-12 text-lg"
         >
-          {submitting ? "Starting..." : "Start Interview"}
+          {submitting ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Running Interview...
+            </span>
+          ) : (
+            "Start Interview"
+          )}
         </Button>
       </div>
     </div>

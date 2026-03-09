@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, MicOff, Lock, ChevronRight, User } from "lucide-react";
+import { Mic, MicOff, Lock, ChevronRight, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -61,6 +61,7 @@ const InterviewsPage = () => {
   const [interviewComplete, setInterviewComplete] = useState(false);
   const [loading, setLoading] = useState(true);
   const [statusText, setStatusText] = useState("Connecting...");
+  const [downloadUrl, setDownloadUrl] = useState<string>("");
 
   // Refs
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -135,12 +136,10 @@ const InterviewsPage = () => {
         const msg = JSON.parse(event.data);
 
         switch (msg.type) {
-          // Interview started — backend confirms
           case "interview_started":
             setStatusText("Starting interview...");
             break;
 
-          // Backend sends next question + Polly audio
           case "question":
             setMessages((prev) => [
               ...prev,
@@ -151,12 +150,10 @@ const InterviewsPage = () => {
             playAudio(msg.audio);
             break;
 
-          // Backend is transcribing the answer
           case "transcribing":
             setStatusText("Processing your answer...");
             break;
 
-          // Backend confirms answer was recorded
           case "answer_recorded":
             setMessages((prev) => [
               ...prev,
@@ -164,7 +161,6 @@ const InterviewsPage = () => {
             ]);
             break;
 
-          // All questions done
           case "interview_complete":
             setMessages((prev) => [
               ...prev,
@@ -175,9 +171,11 @@ const InterviewsPage = () => {
             ]);
             setInterviewComplete(true);
             setStatusText("Interview complete");
+            if (msg.download_url) {
+              setDownloadUrl(msg.download_url);
+            }
             break;
 
-          // Any backend error
           case "error":
             console.error("Backend error:", msg.message);
             setStatusText("An error occurred. Please try again.");
@@ -221,6 +219,7 @@ const InterviewsPage = () => {
     };
   }, [selectedProjectId, userDetails, handleWSMessage]);
 
+  // ─── Mic Button — Start Recording ────────────────────────────────
   const handleMicClick = useCallback(async () => {
     if (isListening || isSpeaking || interviewComplete) return;
 
@@ -238,7 +237,6 @@ const InterviewsPage = () => {
       setIsListening(true);
       setStatusText("Listening...");
 
-      // ✅ Use webm format which is supported by all browsers
       const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
         : "audio/webm";
@@ -263,13 +261,11 @@ const InterviewsPage = () => {
   const handleMicRelease = useCallback(() => {
     if (!isListening) return;
 
-    // Stop media recorder
     mediaRecorderRef.current?.stop();
     mediaRecorderRef.current?.stream
       .getTracks()
       .forEach((track) => track.stop());
 
-    // Tell backend recording stopped
     wsRef.current?.send(JSON.stringify({ type: "stop_recording" }));
     setIsListening(false);
     setStatusText("Processing your answer...");
@@ -286,12 +282,16 @@ const InterviewsPage = () => {
   const canContinueDetails =
     userDetails.name.trim() &&
     userDetails.age.trim() &&
-    userDetails.location.trim();
+    userDetails.location.trim() &&
+    userDetails.gender.trim() &&
+    userDetails.education.trim() &&
+    userDetails.income > 0;
 
   // ─── UI ───────────────────────────────────────────────────────────
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-2rem)] p-6 lg:p-8 max-w-4xl mx-auto w-full">
       <AnimatePresence mode="wait">
+
         {/* Step 1: User Details */}
         {step === "details" && (
           <motion.div
@@ -393,9 +393,10 @@ const InterviewsPage = () => {
               </div>
               <div className="bg-card rounded-lg border p-6 space-y-4">
                 {loading ? (
-                  <p className="text-sm text-muted-foreground text-center">
-                    Loading projects...
-                  </p>
+                  <div className="flex items-center justify-center gap-2 py-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">Loading projects...</p>
+                  </div>
                 ) : (
                   <Select
                     value={selectedProjectId}
@@ -573,36 +574,24 @@ const InterviewsPage = () => {
                   animate={{ opacity: 1 }}
                   className="mt-4 text-center shrink-0"
                 >
-                  <p className="text-xs text-muted-foreground mb-2">
+                  <p className="text-xs text-muted-foreground mb-3">
                     Interview with <strong>{userDetails.name}</strong> •{" "}
                     {userDetails.age}yo • {userDetails.location}
                   </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const transcript = {
-                        user: userDetails,
-                        problem: selectedProject?.projectName,
-                        conversation: messages.map((m) => ({
-                          role: m.role === "ai" ? "AI" : "User",
-                          text: m.text,
-                        })),
-                      };
-                      const blob = new Blob(
-                        [JSON.stringify(transcript, null, 2)],
-                        { type: "application/json" },
-                      );
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = "interview-transcript.json";
-                      a.click();
-                      URL.revokeObjectURL(url);
-                    }}
-                  >
-                    Download Transcript
-                  </Button>
+                  {downloadUrl ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open(downloadUrl, "_blank")}
+                    >
+                      Download Transcript (PDF)
+                    </Button>
+                  ) : (
+                    <p className="text-xs text-muted-foreground flex items-center justify-center gap-1.5">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Preparing transcript...
+                    </p>
+                  )}
                 </motion.div>
               )}
             </div>

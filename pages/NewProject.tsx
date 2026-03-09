@@ -13,23 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-const workflowSteps = [
-  { label: "Define", status: "active" as const },
-  { label: "Questionnaire", status: "upcoming" as const },
-  { label: "AI Personas", status: "upcoming" as const },
-  { label: "Interviews", status: "upcoming" as const },
-  { label: "Insights", status: "upcoming" as const },
-  { label: "Report", status: "upcoming" as const },
-];
-
-const mockRefinedQuestions = [
-  "How do hybrid team members (3-5 tools daily) prioritize and evaluate consolidation of collaboration tools?",
-  "What friction points drive tool abandonment vs. adoption in mid-market teams?",
-  "What are the key decision criteria for IT leaders when evaluating collaboration tool consolidation?",
-  "How does tool fatigue correlate with employee productivity and satisfaction in hybrid teams?",
-  "What role does end-user preference play in procurement decisions for collaboration tools?",
-];
+import toast from "react-hot-toast";
 
 export default function NewProject() {
   const router = useRouter();
@@ -44,32 +28,32 @@ export default function NewProject() {
   const [projectId, setProjectId] = useState("");
 
   async function handleRefine() {
-    const payload = {
-      problemTitle,
-      problemStatement,
-      target,
-      industry,
-    };
-    const data = await fetch(
-      `${process.env.NEXT_PUBLIC_BACKEND_AWS_URL}/refine-questions`,
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type": "application/json",
+    const toastId = toast.loading("Refining your questions...");
+    try {
+      const payload = { problemTitle, problemStatement, target, industry };
+      const data = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_AWS_URL}/refine-questions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify(payload),
-      },
-    );
-    const result = await data.json();
-    console.log("Received:", result);
-    if (result.questions) {
-      setProjectId(result.projectId);
-      setQuestions(result.questions);
-      setShowResults(true);
-    } else {
-      setQuestions(mockRefinedQuestions);
-      setShowResults(true);
+      );
+      const result = await data.json();
+
+      if (result.questions) {
+        setProjectId(result.projectId);
+        setQuestions(result.questions);
+        setShowResults(true);
+        toast.success("Questions refined!", { id: toastId });
+      } else {
+        toast.error("Failed to refine questions. Please try again.", {
+          id: toastId,
+        });
+      }
+    } catch (error) {
+      console.error("Refine error:", error);
+      toast.error("Something went wrong.", { id: toastId });
     }
   }
 
@@ -86,39 +70,28 @@ export default function NewProject() {
   };
 
   async function handleSaveQuestions() {
+    const toastId = toast.loading("Saving questions...");
     try {
-      const payload = {
-        projectId,
-        questions,
-      };
-      console.log("Saving questions:", payload);
+      const payload = { projectId, questions };
 
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_AWS_URL}/save-questions`,
         {
           method: "POST",
-
-          headers: {
-            "Content-Type": "application/json",
-          },
-
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         },
       );
 
-      const result = await response.json();
-
-      console.log("Save result:", result);
-
       if (response.ok) {
-        alert("Questions saved successfully");
+        toast.success("Questions saved successfully!", { id: toastId });
+        router.push("/");
       } else {
-        alert("Failed to save questions");
+        toast.error("Failed to save questions.", { id: toastId });
       }
     } catch (error) {
       console.error("Save error:", error);
-
-      alert("Error saving questions");
+      toast.error("Error saving questions.", { id: toastId });
     }
   }
 
@@ -142,7 +115,7 @@ export default function NewProject() {
             <h1 className="text-2xl font-semibold mb-1">New Insight Project</h1>
             <p className="text-sm text-muted-foreground">
               Define your research problem and let AI help structure your
-              approach
+              approach. Remember to fill all the details
             </p>
           </div>
         </div>
@@ -162,7 +135,7 @@ export default function NewProject() {
                 Problem Title
               </label>
               <Textarea
-                placeholder="e.g., We're seeing high churn in our mid-market segment but don't understand the root causes..."
+                placeholder="CRM Retention Study"
                 value={problemTitle}
                 onChange={(e) => setProblemTitle(e.target.value)}
                 className="min-h-25 text-sm resize-none"
@@ -173,7 +146,7 @@ export default function NewProject() {
                 Problem Statement
               </label>
               <Textarea
-                placeholder="e.g., We're seeing high churn in our mid-market segment but don't understand the root causes..."
+                placeholder="Describe the problem you want to investigate"
                 value={problemStatement}
                 onChange={(e) => setProblemStatement(e.target.value)}
                 className="min-h-25 text-sm resize-none"
@@ -185,7 +158,7 @@ export default function NewProject() {
                 Target Consumer
               </label>
               <Textarea
-                placeholder="e.g., Mid-market SaaS customers, 50-500 employees, using our product for 3-12 months..."
+                placeholder="Who are the consumers affected by this problem"
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
                 className="min-h-20 text-sm resize-none"
@@ -217,7 +190,12 @@ export default function NewProject() {
             <Button
               className="w-full bg-gradient-warm text-accent-foreground hover:opacity-90 transition-opacity"
               onClick={handleRefine}
-              disabled={!problemStatement.trim()}
+              disabled={
+                !problemStatement.trim() ||
+                !problemTitle.trim() ||
+                !target.trim() ||
+                !industry
+              }
             >
               <Sparkles className="h-4 w-4 mr-2" />
               Refine with AI
@@ -337,7 +315,7 @@ export default function NewProject() {
                   disabled={questions.length === 0}
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  Submit Questions as JSON
+                  Submit Questions
                 </Button>
               </motion.div>
             )}
